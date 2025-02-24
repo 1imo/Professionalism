@@ -4,26 +4,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
             console.log("HIT");
             improveDraft().catch(error => {
-                console.error('Error in improveDraft:', error);
+                logError('Error in improveDraft: ' + error.message);
             });
         } catch (error) {
-            console.error('Error handling extension message:', error);
+            logError('Error handling extension message: ' + error.message);
         }
     }
 });
 
 async function improveDraft() {
     try {
-        console.log('Starting improveDraft...');
+        logInfo('Starting improveDraft...');
         
         // Detect email client
         const isGmail = window.location.hostname.includes('mail.google.com');
         const isOutlook = window.location.hostname.includes('outlook.live.com') || 
                          window.location.hostname.includes('outlook.office.com');
                          
-        console.log('Environment detection:', { isGmail, isOutlook, hostname: window.location.hostname });
+        logInfo('Environment detection:', { isGmail, isOutlook, hostname: window.location.hostname });
 
         if (!isGmail && !isOutlook) {
+            logWarn('Unsupported email client');
             throw new Error('Unsupported email client');
         }
 
@@ -47,7 +48,7 @@ async function improveDraft() {
         };
 
         const currentSelectors = isGmail ? selectors.gmail : selectors.outlook;
-        console.log('Using selectors:', currentSelectors);
+        logInfo('Using selectors:', currentSelectors);
 
         // Get elements using appropriate selectors
         const subjectInput = document.querySelector(currentSelectors.subject);
@@ -57,7 +58,7 @@ async function improveDraft() {
             for (const selector of currentSelectors.body) {
                 draftContent = document.querySelector(selector);
                 if (draftContent) {
-                    console.log('Found draft content with selector:', selector);
+                    logInfo('Found draft content with selector:', selector);
                     break;
                 }
             }
@@ -67,7 +68,7 @@ async function improveDraft() {
         
         const recipientElement = document.querySelector(currentSelectors.recipient);
 
-        console.log('Found elements:', {
+        logInfo('Found elements:', {
             subject: !!subjectInput,
             draft: !!draftContent,
             recipient: !!recipientElement,
@@ -77,6 +78,7 @@ async function improveDraft() {
         });
 
         if (!draftContent) {
+            logError('No draft content element found');
             throw new Error('No draft content element found');
         }
 
@@ -92,9 +94,9 @@ async function improveDraft() {
                                       recipientElement.textContent.trim();
                     recipient = displayName ? displayName.split(' ')[0] : '[Recipient Name]';
                 }
-                console.log('Parsed recipient:', recipient);
+                logInfo('Parsed recipient:', recipient);
             } catch (error) {
-                console.warn('Error parsing recipient:', error);
+                logWarn('Error parsing recipient: ' + error.message);
             }
         }
 
@@ -110,10 +112,11 @@ async function improveDraft() {
         }
 
         if (!text) {
+            logError('No content found in draft');
             throw new Error('No content found in draft');
         }
 
-        console.log('Content found:', {
+        logInfo('Content found:', {
             textLength: text?.length,
             hasProofElement: !!proofElement
         });
@@ -149,7 +152,7 @@ async function improveDraft() {
                     const matchIndex = match.index;
                     existingContent = draftContent.innerHTML.substring(matchIndex);
                     text = draftContent.innerText.substring(0, matchIndex).trim();
-                    console.log('Found reply chain with pattern:', pattern);
+                    logInfo('Found reply chain with pattern:', pattern);
                     // Found a match, don't continue searching
                     break;
                 }
@@ -157,7 +160,7 @@ async function improveDraft() {
 
             // Try DOM traversal if no pattern match was found
             if (!existingContent) {
-                console.log('No pattern match found, trying DOM traversal');
+                logInfo('No pattern match found, trying DOM traversal');
                 const replyMarker = draftContent.querySelector('#divRplyFwdMsg, .x_gmail_quote, blockquote, .gmail_quote');
                 if (replyMarker) {
                     // Extract just up to the end of the first reply chain
@@ -174,27 +177,27 @@ async function improveDraft() {
 
                     existingContent = fullContent.substring(startIndex, endIndex);
                     text = draftContent.innerText.substring(0, startIndex).trim();
-                    console.log('Found reply chain via DOM traversal');
+                    logInfo('Found reply chain via DOM traversal');
                 }
             }
 
-            console.log('Reply chain extraction:', {
+            logInfo('Reply chain extraction:', {
                 foundChain: !!existingContent,
                 chainLength: existingContent?.length,
                 extractedTextLength: text?.length
             });
         } catch (error) {
-            console.warn('Error parsing existing content:', error);
+            logWarn('Error parsing existing content: ' + error.message);
         }
 
         const subject = subjectInput ? subjectInput.value : '';
         
-        console.log('Preparing API request for:', {
+        logInfo('Preparing API request for:', {
             subject: subject,
             bodyLength: text?.length,
             hasExistingContent: !!existingContent
         });
-
+        
         // Retrieve persistent UUID from storage
         let persistentUuid = await getPersistentUuid();
         // Retrieve session ID from session storage
@@ -229,13 +232,13 @@ async function improveDraft() {
         // Retrieve the session ID from the response headers
         const returnedSessionId = apiResponse.headers.get('X-Session-ID');
 
-        console.log(apiResponse)
+        logInfo(apiResponse)
 
         // Check if the returned session ID is valid
         if (returnedSessionId) {
             sessionStorage.setItem('sessionId', returnedSessionId); // Store the session ID
         } else {
-            console.error('Session ID is null after fetch');
+            logError('Session ID is null after fetch');
             // Handle the case where the session ID is not returned
             throw new Error('Failed to retrieve session ID after fetch');
         }
@@ -252,9 +255,9 @@ async function improveDraft() {
                 const newSubject = improvedSubject.replace('SUBJECT:', '').trim();
                 subjectInput.value = newSubject;
                 subjectInput.dispatchEvent(new Event('input', { bubbles: true }));
-                console.log('Subject updated');
+                logInfo('Subject updated');
             } catch (error) {
-                console.error('Error updating subject:', error);
+                logError('Error updating subject: ' + error.message);
             }
         }
         
@@ -318,15 +321,15 @@ async function improveDraft() {
                     }, 100);
                 }
                 
-                console.log('Draft content updated');
+                logInfo('Draft content updated');
             } catch (error) {
-                console.error('Error updating draft content:', error);
+                logError('Error updating draft content: ' + error.message);
             }
         }
 
-        console.log('✨ Improvement complete');
+        logInfo('✨ Improvement complete');
     } catch (error) {
-        console.error('Error in improveDraft:', error);
+        logError('Error in improveDraft: ' + error.message);
         throw error;
     }
 }

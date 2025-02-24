@@ -4,6 +4,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { SessionManager } from './sessionManager';
 import { config } from './config';
+import { logger } from './loggingManager';
 
 const app = express();
 const sessionManager = new SessionManager();
@@ -20,13 +21,25 @@ interface ImproveRequestBody {
     };
 }
 
+interface LogEntryRequest {
+    level: string;
+    message: string;
+    file: string;
+    function: string;
+}
+
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: [
+        "https://mail.google.com"
+    ]
+}));
 app.use(express.json());
 
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
     console.error('Unhandled error:', err);
+    logger.error(err.message, getClientIp(req));
     res.status(500).json({ error: 'Internal server error' });
 };
 
@@ -42,7 +55,7 @@ const getClientIp = (req: Request): string => {
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    max: 100, // Limit
     message: { error: 'Too many requests, please try again later' }
 });
 
@@ -54,11 +67,13 @@ const improveHandler: RequestHandler = async (req, res) => {
 
     // Validate required fields
     if (!content?.body) {
+        logger.warn('Missing email content', getClientIp(req), sessionId);
         res.status(400).json({ error: 'Missing email content' });
         return;
     }
 
     const ipAddress = getClientIp(req);
+    logger.info('Improvement request received', ipAddress, sessionId);
 
     try {
         // Validate session using available identifiers
@@ -70,6 +85,7 @@ const improveHandler: RequestHandler = async (req, res) => {
         );
 
         if (!returnedPersistentUuid) {
+            logger.warn('Invalid session', ipAddress, sessionId);
             res.status(401).json({ error: 'Invalid session' });
             return;
         }
@@ -79,6 +95,7 @@ const improveHandler: RequestHandler = async (req, res) => {
         const requestCount = await sessionManager.checkRequestLimit(sessionId ?? '', returnedPersistentUuid, deviceId ?? '', requestDate);
 
         if (requestCount >= 50) {
+            logger.warn('Daily request limit reached', ipAddress, sessionId);
             res.status(429).json({ error: 'Daily request limit reached' });
             return;
         }
@@ -88,7 +105,7 @@ const improveHandler: RequestHandler = async (req, res) => {
 
         // Check if the returned session ID is null
         if (!returnedSessionId) {
-            console.error('Session ID is null');
+            logger.error('Session ID is null', ipAddress, sessionId);
             res.status(500).json({ error: 'Failed to retrieve session ID' });
             return;
         }
@@ -96,7 +113,7 @@ const improveHandler: RequestHandler = async (req, res) => {
         // Set the session ID in the response headers
         res.setHeader('X-Session-ID', returnedSessionId);
 
-        console.log('API KEY', config.GEMINI_API_ENDPOINT, config.GEMINI_API_KEY)
+        logger.info('API KEY used', ipAddress, sessionId);
 
         // Make request to Gemini API
         const response = await fetch(`${config.GEMINI_API_ENDPOINT}?key=${config.GEMINI_API_KEY}`, {
@@ -127,7 +144,7 @@ const improveHandler: RequestHandler = async (req, res) => {
         });
 
         if (!response.ok) {
-            console.log(response)
+            logger.error(`Gemini API request failed: ${response.statusText}`, ipAddress, sessionId);
             throw new Error(`Gemini API request failed: ${response.statusText}`);
         }
 
@@ -136,28 +153,33 @@ const improveHandler: RequestHandler = async (req, res) => {
         res.json({ persistentUuid: returnedPersistentUuid, improvedContent });
 
     } catch (error) {
-        console.error('Error improving email:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred while improving email';
+        logger.error('Error improving email: ' + errorMessage, getClientIp(req), sessionId);
         res.status(500).json({ error: 'Failed to improve email content' });
     }
 };
 
 const sessionsHandler: RequestHandler = async (req, res) => {
+    const sessionId = req.params.identifier;
     try {
-        const sessions = await sessionManager.getUserSessions(req.params.identifier);
+        const sessions = await sessionManager.getUserSessions(sessionId);
+        logger.info('Fetched user sessions', getClientIp(req), sessionId);
         res.json({
             sessions: sessions.map(session => ({
                 ...session,
-                ip_address: `${session.ip_address.split('.').slice(0, 2).join('.')}.xx.xx` // Mask IP for privacy
+                ip_address: session.ip_address
             }))
         });
     } catch (error) {
-        console.error('Error fetching sessions:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred while fetching sessions';
+        logger.error('Error fetching sessions: ' + errorMessage, getClientIp(req), sessionId);
         res.status(500).json({ error: 'Failed to fetch sessions' });
     }
 };
 
 const healthHandler: RequestHandler = (req, res) => {
     const ipAddress = getClientIp(req);
+    logger.info('Health check performed', ipAddress);
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -165,10 +187,41 @@ const healthHandler: RequestHandler = (req, res) => {
     });
 };
 
+// Log entry handler
+const logEntryHandler: RequestHandler = async (req, res) => {
+    const sessionId = req.params.identifier;
+    const ipAddress = getClientIp(req);
+    const { level, message, file, function: functionName }: LogEntryRequest = req.body; // Destructure new fields
+
+    const deviceId = req.body.deviceId;
+    const persistentUuid = req.body.persistentUuid;
+
+    // Validate session using the session manager
+    const sessionValid = await sessionManager.validateSession(deviceId, persistentUuid, sessionId, ipAddress);
+    if (!sessionValid) {
+        logger.warn('Invalid session', ipAddress, sessionId);
+        res.status(401).json({ error: 'Invalid session' });
+        return;
+    }
+
+    try {
+        logger.log(level, message, ipAddress, sessionId, functionName, file);
+        logger.info('Log entry received', ipAddress, sessionId);
+        res.status(200).json({ message: 'Log entry recorded successfully' });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred while logging';
+        logger.error('Error logging entry: ' + errorMessage, ipAddress, sessionId);
+        res.status(500).json({ error: 'Failed to log entry' });
+    }
+
+    return; // Explicitly return void
+};
+
 // Routes
 app.post('/improve', improveHandler);
 app.get('/sessions/:identifier', sessionsHandler);
 app.get('/health', healthHandler);
+app.post('/logs/:identifier', logEntryHandler);
 
 // Start server
 const startServer = () => {
