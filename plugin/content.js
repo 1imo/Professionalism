@@ -229,6 +229,8 @@ async function improveDraft() {
         // Retrieve the session ID from the response headers
         const returnedSessionId = apiResponse.headers.get('X-Session-ID');
 
+        console.log(apiResponse)
+
         // Check if the returned session ID is valid
         if (returnedSessionId) {
             sessionStorage.setItem('sessionId', returnedSessionId); // Store the session ID
@@ -242,7 +244,7 @@ async function improveDraft() {
         await savePersistentUuid(returnedPersistentUuid);
 
         // Parse the improved version
-        const [improvedSubject, improvedBody, improvedSignature] = improvedContent.split('---').map(s => s.trim());
+        const [improvedSubject, improvedBody, improvedSignature] = improvedContent.candidates[0].content.parts[0].text.split('---').map(s => s.trim());
         
         // Update the email fields
         if (subjectInput && improvedSubject.startsWith('SUBJECT:')) {

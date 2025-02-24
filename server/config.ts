@@ -1,5 +1,5 @@
 export const config = {
-    GEMINI_API_ENDPOINT: process.env.GEMINI_API_ENDPOINT ?? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+    GEMINI_API_ENDPOINT: process.env.GEMINI_API_ENDPOINT ?? 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
     PORT: process.env.PORT ?? 3000,
     HOST: process.env.HOST ?? 'localhost',

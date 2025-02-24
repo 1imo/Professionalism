@@ -132,6 +132,7 @@ const improveHandler: RequestHandler = async (req, res) => {
         }
 
         const improvedContent = await response.json();
+        res.set('Access-Control-Expose-Headers', 'X-Session-ID');
         res.json({ persistentUuid: returnedPersistentUuid, improvedContent });
 
     } catch (error) {
