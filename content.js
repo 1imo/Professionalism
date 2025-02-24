@@ -1,86 +1,201 @@
 // Listen for clicks on the extension icon
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "analyze") {
-        improveDraft();
+        try {
+            console.log("HIT");
+            improveDraft().catch(error => {
+                console.error('Error in improveDraft:', error);
+            });
+        } catch (error) {
+            console.error('Error handling extension message:', error);
+        }
     }
 });
 
 async function improveDraft() {
-    const subjectInput = document.querySelector('input[name="subjectbox"]');
-    const draftContent = document.querySelector('div[aria-label="Message Body"]');
-    
-    const recipientElement = document.querySelector('span[email]');
-    let recipient = '[Recipient Name]';
-    
-    if (recipientElement) {
-        // Try to get the display name first
-        const displayName = recipientElement.textContent.trim();
-        if (displayName) {
-            // Get first name only
-            recipient = displayName.split(' ')[0];
-        } else {
-            // Fallback to email address
-            const email = recipientElement.getAttribute('email');
-            recipient = email ? email.split('@')[0] : '[Recipient Name]';
-        }
-    }
-
-    console.log("Recipient", recipient);
-    
-    if (!draftContent) {
-        console.log('No draft currently open');
-        return;
-    }
-
-    // Get both HTML and plain text content
-    const htmlContent = draftContent.innerHTML;
-    const textContent = draftContent.innerText;
-
-    // Regex patterns for precise email header matching
-    const headerPatterns = [
-        // HTML Gmail reply header format
-        /<div dir="ltr" class="gmail_attr">On (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} at \d{1,2}:\d{2}(?: [AP]M)?, .+? &lt;.+?&gt; wrote:<\/div>/,
-        
-        // Plain text Gmail reply header format (fallback)
-        /On (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} at \d{1,2}:\d{2}(?: [AP]M)?, .+? (?:<[^>]+>|&lt;.+?&gt;) wrote:/,
-        
-        // Gmail forwarded message marker (both formats)
-        /<div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<\/div>/,
-        /\n\n---------- Forwarded message ---------/
-    ];
-    
-    // Find existing content (replies, forwards) using regex patterns
-    let existingHtmlContent = '';
-    let existingTextContent = '';
-    let text = textContent;
-
-    for (const pattern of headerPatterns) {
-        const htmlMatch = htmlContent.match(pattern);
-        const textMatch = textContent.match(pattern);
-        
-        if (htmlMatch) {
-            const matchIndex = htmlMatch.index;
-            existingHtmlContent = htmlContent.substring(matchIndex);
-            text = textContent.substring(0, matchIndex).trim();
-            break;
-        }
-        
-        if (textMatch) {
-            const matchIndex = textMatch.index;
-            existingTextContent = textContent.substring(matchIndex);
-            text = textContent.substring(0, matchIndex).trim();
-            break;
-        }
-    }
-
-    const subject = subjectInput ? subjectInput.value : '';
-    
-    console.log('📧 Original draft:', {
-        subject: subject,
-        body: text
-    });
-
     try {
+        console.log('Starting improveDraft...');
+        
+        // Detect email client
+        const isGmail = window.location.hostname.includes('mail.google.com');
+        const isOutlook = window.location.hostname.includes('outlook.live.com') || 
+                         window.location.hostname.includes('outlook.office.com');
+                         
+        console.log('Environment detection:', { isGmail, isOutlook, hostname: window.location.hostname });
+
+        if (!isGmail && !isOutlook) {
+            throw new Error('Unsupported email client');
+        }
+
+        // Initialize variables with appropriate selectors
+        const selectors = {
+            gmail: {
+                subject: 'input[name="subjectbox"]',
+                body: 'div[aria-label="Message Body"]',
+                recipient: 'span[email]'
+            },
+            outlook: {
+                subject: 'input[aria-label="Add a subject"]',
+                body: [
+                    '.dFCbN.dPKNh.z8tsM.DziEn',
+                    '.dFCbN.fGO0P.dPKNh.DziEn',
+                    '.dFCbN.tJ1L7.z8tsM.DziEn',
+                    '[role="textbox"][aria-label="Message body"]'
+                ],
+                recipient: '[data-displayed-name], .textContainer-348, .pU1YL'
+            }
+        };
+
+        const currentSelectors = isGmail ? selectors.gmail : selectors.outlook;
+        console.log('Using selectors:', currentSelectors);
+
+        // Get elements using appropriate selectors
+        const subjectInput = document.querySelector(currentSelectors.subject);
+        let draftContent;
+        
+        if (isOutlook) {
+            for (const selector of currentSelectors.body) {
+                draftContent = document.querySelector(selector);
+                if (draftContent) {
+                    console.log('Found draft content with selector:', selector);
+                    break;
+                }
+            }
+        } else {
+            draftContent = document.querySelector(currentSelectors.body);
+        }
+        
+        const recipientElement = document.querySelector(currentSelectors.recipient);
+
+        console.log('Found elements:', {
+            subject: !!subjectInput,
+            draft: !!draftContent,
+            recipient: !!recipientElement,
+            draftContentTag: draftContent?.tagName,
+            draftContentRole: draftContent?.getAttribute('role'),
+            draftContentClasses: draftContent?.className
+        });
+
+        if (!draftContent) {
+            throw new Error('No draft content element found');
+        }
+
+        let recipient = '[Recipient Name]';
+        if (recipientElement) {
+            try {
+                if (isGmail) {
+                    const displayName = recipientElement.textContent.trim();
+                    recipient = displayName ? displayName.split(' ')[0] : 
+                              recipientElement.getAttribute('email')?.split('@')[0] || '[Recipient Name]';
+                } else {
+                    const displayName = recipientElement.getAttribute('data-displayed-name') || 
+                                      recipientElement.textContent.trim();
+                    recipient = displayName ? displayName.split(' ')[0] : '[Recipient Name]';
+                }
+                console.log('Parsed recipient:', recipient);
+            } catch (error) {
+                console.warn('Error parsing recipient:', error);
+            }
+        }
+
+        // Get content
+        let text;
+        let proofElement;
+        
+        if (isOutlook) {
+            proofElement = draftContent.querySelector('.elementToProof');
+            text = proofElement ? proofElement.innerText : draftContent.innerText;
+        } else {
+            text = draftContent.innerText;
+        }
+
+        if (!text) {
+            throw new Error('No content found in draft');
+        }
+
+        console.log('Content found:', {
+            textLength: text?.length,
+            hasProofElement: !!proofElement
+        });
+
+        // Regex patterns for email header matching
+        const headerPatterns = [
+            // Outlook patterns
+            /<div id="divRplyFwdMsg"[^>]*>/i,
+            /<div style="border-top:.*?From:/i,
+            /\n\nFrom:.*?\nSent:.*?\nTo:.*?\nSubject:/s,
+            /<div class="ms-font-weight-regular">From:/i,
+            /<font.*?><b>From:<\/b>/i,
+            // Gmail patterns
+            /<div dir="ltr" class="gmail_attr">On (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} at \d{1,2}:\d{2}(?: [AP]M)?, .+? &lt;.+?&gt; wrote:<\/div>/,
+            /On (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} at \d{1,2}:\d{2}(?: [AP]M)?, .+? (?:<[^>]+>|&lt;.+?&gt;) wrote:/,
+            /<div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<\/div>/,
+            /\n\n---------- Forwarded message ---------/,
+            /<div class="x_gmail_quote"/i,
+            /class="x_gmail_attr"/i,
+            // Generic patterns
+            /blockquote class="x_gmail_quote"/i,
+            /<div class="gmail_quote"/i
+        ];
+
+        let existingContent = '';
+        text = draftContent.innerText;
+
+        try {
+            // First try pattern matching
+            for (const pattern of headerPatterns) {
+                const match = draftContent.innerHTML.match(pattern);
+                if (match) {
+                    const matchIndex = match.index;
+                    existingContent = draftContent.innerHTML.substring(matchIndex);
+                    text = draftContent.innerText.substring(0, matchIndex).trim();
+                    console.log('Found reply chain with pattern:', pattern);
+                    // Found a match, don't continue searching
+                    break;
+                }
+            }
+
+            // Try DOM traversal if no pattern match was found
+            if (!existingContent) {
+                console.log('No pattern match found, trying DOM traversal');
+                const replyMarker = draftContent.querySelector('#divRplyFwdMsg, .x_gmail_quote, blockquote, .gmail_quote');
+                if (replyMarker) {
+                    // Extract just up to the end of the first reply chain
+                    const replyContent = replyMarker.outerHTML;
+                    const fullContent = draftContent.innerHTML;
+                    const startIndex = fullContent.indexOf(replyContent);
+                    let endIndex = startIndex + replyContent.length;
+
+                    // Find the next reply marker after this one
+                    const nextMarkerMatch = fullContent.slice(endIndex).match(/<div id="divRplyFwdMsg"|<div class="x_gmail_quote"|<blockquote|<div class="gmail_quote"/i);
+                    if (nextMarkerMatch) {
+                        endIndex = endIndex + nextMarkerMatch.index;
+                    }
+
+                    existingContent = fullContent.substring(startIndex, endIndex);
+                    text = draftContent.innerText.substring(0, startIndex).trim();
+                    console.log('Found reply chain via DOM traversal');
+                }
+            }
+
+            console.log('Reply chain extraction:', {
+                foundChain: !!existingContent,
+                chainLength: existingContent?.length,
+                extractedTextLength: text?.length
+            });
+        } catch (error) {
+            console.warn('Error parsing existing content:', error);
+        }
+
+        const subject = subjectInput ? subjectInput.value : '';
+        
+        console.log('Preparing API request for:', {
+            subject: subject,
+            bodyLength: text?.length,
+            hasExistingContent: !!existingContent
+        });
+
+        // Make API request
         const response = await fetch(`${config.API_ENDPOINT}?key=${config.GEMINI_API_KEY}`, {
             method: 'POST',
             headers: {
@@ -108,7 +223,16 @@ async function improveDraft() {
             })
         });
 
+        if (!response.ok) {
+            throw new Error(`API request failed with status ${response.status}`);
+        }
+
         const data = await response.json();
+        
+        if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            throw new Error('Invalid API response format');
+        }
+
         const improvedVersion = data.candidates[0].content.parts[0].text;
         
         // Parse the improved version
@@ -116,44 +240,85 @@ async function improveDraft() {
         
         // Update the email fields
         if (subjectInput && improvedSubject.startsWith('SUBJECT:')) {
-            subjectInput.value = improvedSubject.replace('SUBJECT:', '').trim();
-            // Trigger input event to ensure Gmail registers the change
-            subjectInput.dispatchEvent(new Event('input', { bubbles: true }));
+            try {
+                const newSubject = improvedSubject.replace('SUBJECT:', '').trim();
+                subjectInput.value = newSubject;
+                subjectInput.dispatchEvent(new Event('input', { bubbles: true }));
+                console.log('Subject updated');
+            } catch (error) {
+                console.error('Error updating subject:', error);
+            }
         }
         
         if (draftContent) {
-            // Combine the body and signature
-            let cleanContent = `${improvedBody}\n\n${improvedSignature}`;
-            
-            // Clean up any trailing 'undefined'
-            if (cleanContent.endsWith('\n\nundefined')) {
-                cleanContent = cleanContent.slice(0, -11);
-            } else if (cleanContent.endsWith('undefined')) {
-                cleanContent = cleanContent.slice(0, -9);
+            try {
+                // Clean and format the content
+                const contentParts = [];
+                if (improvedBody) contentParts.push(improvedBody);
+                if (improvedSignature && improvedSignature !== 'undefined') contentParts.push(improvedSignature);
+                
+                let cleanContent = contentParts.join('\n\n').trim();
+                cleanContent = cleanContent
+                    .replace(/\n{3,}/g, '\n\n')
+                    .split('\n')
+                    .map(line => line.trim())
+                    .join('\n');
+
+                if (isOutlook) {
+                    // First clean up any existing content
+                    draftContent.innerHTML = '';
+                    
+                    // Create or update elementToProof
+                    const newProofElement = document.createElement('div');
+                    newProofElement.className = 'elementToProof';
+                    newProofElement.style.fontFamily = 'Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif';
+                    newProofElement.style.fontSize = '10pt';
+                    newProofElement.style.color = 'rgb(0, 0, 0)';
+                    newProofElement.innerHTML = cleanContent.split('\n').map(line => {
+                        return line.trim() ? `<div>${line}</div>` : '<div><br></div>';
+                    }).join('');
+                    
+                    draftContent.appendChild(newProofElement);
+                } else {
+                    // Gmail format
+                    const formattedContent = cleanContent.split('\n').map(line => {
+                        return line.trim() ? `<div>${line}</div>` : '<div><br></div>';
+                    }).join('');
+                    draftContent.innerHTML = formattedContent;
+                }
+
+                // Handle reply chain if it exists
+                if (existingContent) {
+                    // Add spacing before reply chain
+                    draftContent.appendChild(document.createElement('br'));
+                    draftContent.appendChild(document.createElement('br'));
+                    
+                    // Simply append the existing content
+                    const replyContentWrapper = document.createElement('div');
+                    replyContentWrapper.innerHTML = existingContent;
+                    draftContent.appendChild(replyContentWrapper);
+                }
+                
+                // Ensure changes are registered
+                draftContent.dispatchEvent(new Event('input', { bubbles: true }));
+                if (isOutlook) {
+                    draftContent.dispatchEvent(new Event('change', { bubbles: true }));
+                    // Focus and blur to ensure Outlook saves the changes
+                    draftContent.focus();
+                    setTimeout(() => {
+                        draftContent.blur();
+                    }, 100);
+                }
+                
+                console.log('Draft content updated');
+            } catch (error) {
+                console.error('Error updating draft content:', error);
             }
-            
-            // Normalize line breaks
-            cleanContent = cleanContent.replace(/\n{3,}/g, '\n\n').trim();
-            
-            // Convert line breaks to <br> tags for the new draft content
-            const formattedDraft = cleanContent.split('\n').join('<br>\n');
-            
-            // Always preserve the existing content if we found it
-            if (existingHtmlContent || existingTextContent) {
-                const existingContent = existingHtmlContent || existingTextContent;
-                // Make sure we have proper spacing before the reply chain
-                draftContent.innerHTML = `${formattedDraft}<br>\n<br>\n${existingContent}`;
-            } else {
-                // No reply chain found, just use the new content
-                draftContent.innerHTML = formattedDraft;
-            }
-            
-            // Trigger input event to ensure Gmail registers the change
-            draftContent.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
-        console.log('✨ Improved version:', improvedVersion);
+        console.log('✨ Improvement complete');
     } catch (error) {
-        console.error('Error improving draft:', error);
+        console.error('Error in improveDraft:', error);
+        throw error;
     }
 }
