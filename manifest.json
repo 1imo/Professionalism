@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Professionalism",
+  "version": "1.0",
+  "description": "Helps ensure consistent professional communication",
+  "permissions": ["activeTab"],
+  "action": {
+    "default_title": "Email Improvement"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://mail.google.com/*"],
+      "js": ["config.js", "content.js"]
+    }
+  ]
+} 
