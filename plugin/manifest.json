@@ -3,7 +3,7 @@
   "name": "Professionalism",
   "version": "1.0",
   "description": "Helps ensure consistent professional communication",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "identity"],
   "action": {
     "default_title": "Email Improvement"
   },
@@ -18,7 +18,7 @@
         "*://outlook.office.com/*",
         "*://outlook.office365.com/*"
       ],
-      "js": ["config.js", "content.js"]
+      "js": ["utility.js", "config.js", "content.js"]
     }
   ],
   "host_permissions": [

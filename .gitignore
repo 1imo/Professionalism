@@ -17,4 +17,6 @@ server/.eslintcache
 server/.cache
 server/*.tsbuildinfo
 server/.idea
+server/bun.lock
+server/sessions.db
 .DS_Store

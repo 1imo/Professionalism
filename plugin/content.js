@@ -195,48 +195,54 @@ async function improveDraft() {
             hasExistingContent: !!existingContent
         });
 
-        // Make API request
-        const response = await fetch(`${config.API_ENDPOINT}?key=${config.GEMINI_API_KEY}`, {
+        // Retrieve persistent UUID from storage
+        let persistentUuid = await getPersistentUuid();
+        // Retrieve session ID from session storage
+        let sessionId = sessionStorage.getItem('sessionId');
+
+        // Prepare the request body
+        const requestBody = {
+            deviceId: chrome.runtime.id ?? '',
+            persistentUuid: persistentUuid ?? '',
+            sessionId: sessionId ?? '',
+            content: {
+                subject: subject,
+                body: text,
+                recipient: recipient
+            }
+        };
+
+        const apiResponse = await fetch(`${config.API_ENDPOINT}/improve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `Rewrite this email to be more professional, maintaining the same core message but with improved language and structure. Use consistent formatting with exactly one blank line between paragraphs. Use "${recipient}" as the recipient name if provided. Keep any original signature if found, otherwise use [Your Name]. Format your response exactly like this:
-                        SUBJECT: [subject line]
-                        ---
-                        Most fitting greeting e.g Dear, Hi, Hey, etc. for ${recipient},
-
-                        [email body with consistent single-line spacing between paragraphs]
-
-                        Most suitable sign off message e.g Thanks, Best Regards, Sincerely etc.,
-
-                        [original signature / signer or [Your Name]]
-                        
-                        Original email:
-                        Subject: ${subject}
-                        Body: ${text}`
-                    }]
-                }]
-            })
+            body: JSON.stringify(requestBody)
         });
 
-        if (!response.ok) {
-            throw new Error(`API request failed with status ${response.status}`);
+        if (!apiResponse.ok) {
+            throw new Error(`API request failed with status ${apiResponse.status}`);
         }
 
-        const data = await response.json();
-        
-        if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-            throw new Error('Invalid API response format');
+        const { persistentUuid: returnedPersistentUuid, improvedContent } = await apiResponse.json();
+
+        // Retrieve the session ID from the response headers
+        const returnedSessionId = apiResponse.headers.get('X-Session-ID');
+
+        // Check if the returned session ID is valid
+        if (returnedSessionId) {
+            sessionStorage.setItem('sessionId', returnedSessionId); // Store the session ID
+        } else {
+            console.error('Session ID is null after fetch');
+            // Handle the case where the session ID is not returned
+            throw new Error('Failed to retrieve session ID after fetch');
         }
 
-        const improvedVersion = data.candidates[0].content.parts[0].text;
-        
+        // Save the returned persistent UUID
+        await savePersistentUuid(returnedPersistentUuid);
+
         // Parse the improved version
-        const [improvedSubject, improvedBody, improvedSignature] = improvedVersion.split('---').map(s => s.trim());
+        const [improvedSubject, improvedBody, improvedSignature] = improvedContent.split('---').map(s => s.trim());
         
         // Update the email fields
         if (subjectInput && improvedSubject.startsWith('SUBJECT:')) {

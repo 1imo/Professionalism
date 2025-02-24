@@ -1,4 +1,3 @@
 const config = {
-    GEMINI_API_KEY: 'PLACEHOLDER',
-    API_ENDPOINT: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+    API_ENDPOINT: 'http://localhost:3000'
 }; 
