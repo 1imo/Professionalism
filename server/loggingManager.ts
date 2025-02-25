@@ -37,7 +37,14 @@ export class LoggingManager {
             this.db.prepare(`
                 INSERT INTO logs (level, message, ip, session_id, function_name, file_name) 
                 VALUES (?, ?, ?, ?, ?, ?)
-            `).run(level ?? null, message ?? null, ip ?? null, sessionId ?? null, functionName ?? null, fileName ?? null);
+            `).run(
+                String(level ?? null),
+                String(message ?? null),
+                String(ip ?? null),
+                String(sessionId ?? null),
+                String(functionName ?? null),
+                String(fileName ?? null)
+            );
         } catch (error) {
             console.error('Failed to log message:', error);
         }

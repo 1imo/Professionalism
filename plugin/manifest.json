@@ -26,5 +26,10 @@
     "*://outlook.live.com/*",
     "*://outlook.office.com/*",
     "*://outlook.office365.com/*"
-  ]
+  ],
+  "icons": {
+    "16": "/images/16x16.png",
+    "48": "/images/48x48.png",
+    "128": "/images/128x128.png"
+  }
 }

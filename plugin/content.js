@@ -66,7 +66,7 @@ async function improveDraft() {
             draftContent = document.querySelector(currentSelectors.body);
         }
         
-        const recipientElement = document.querySelector(currentSelectors.recipient);
+        const recipientElement = null
 
         logInfo('Found elements:', {
             subject: !!subjectInput,
@@ -197,7 +197,7 @@ async function improveDraft() {
             bodyLength: text?.length,
             hasExistingContent: !!existingContent
         });
-        
+
         // Retrieve persistent UUID from storage
         let persistentUuid = await getPersistentUuid();
         // Retrieve session ID from session storage
