@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import { SessionManager } from './sessionManager';
 import { config } from './config';
 import { logger } from './loggingManager';
+import fs from 'fs';
+import https from 'https';
 
 const app = express();
 const sessionManager = new SessionManager();
@@ -214,7 +216,7 @@ const logEntryHandler: RequestHandler = async (req, res) => {
         res.status(500).json({ error: 'Failed to log entry' });
     }
 
-    return; // Explicitly return void
+    return;
 };
 
 // Routes
@@ -225,8 +227,17 @@ app.post('/logs/:identifier', logEntryHandler);
 
 // Start server
 const startServer = () => {
-    const server = app.listen(config.PORT, () => {
-        console.log(`🚀 Server running on port ${config.PORT}`);
+    // SSL certificate options
+    const httpsOptions = {
+        key: fs.readFileSync('/etc/letsencrypt/archive/professionalism.hopto.org/privkey1.pem'),
+        cert: fs.readFileSync('/etc/letsencrypt/archive/professionalism.hopto.org/fullchain1.pem')
+    };
+
+    // Create HTTPS server
+    const server = https.createServer(httpsOptions, app);
+
+    server.listen(config.PORT, "0.0.0.0", () => {
+        console.log(`🚀 HTTPS Server running on port ${config.PORT}`);
     });
 
     // Graceful shutdown

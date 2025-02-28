@@ -1,7 +1,7 @@
 export const config = {
     GEMINI_API_ENDPOINT: process.env.GEMINI_API_ENDPOINT ?? 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
-    PORT: process.env.PORT ?? 3000,
+    PORT: process.env.PORT ?? 443,
     HOST: process.env.HOST ?? 'localhost',
     SESSION_TIMEOUT: parseInt(process.env.SESSION_TIMEOUT ?? '86400000'), // 24 hours
 };
